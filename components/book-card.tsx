@@ -6,6 +6,9 @@ import { ShoppingCart, BookOpen, Eye } from "lucide-react";
 import { cn, formatPrice, truncate } from "@/lib/utils";
 import { useCartStore } from "@/lib/store/cart";
 
+import { useSession } from "next-auth/react";
+import { useRouter, usePathname } from "next/navigation";
+
 export interface BookCardProps {
   id: string;
   slug: string;
@@ -31,11 +34,22 @@ export default function BookCard({
   stock,
   className,
 }: BookCardProps) {
+  const { status } = useSession();
+  const router = useRouter();
+  const pathname = usePathname();
   const addItem = useCartStore((s) => s.addItem);
   const openCart = useCartStore((s) => s.openCart);
   const outOfStock = stock === 0;
 
   const handleAddToCart = () => {
+    if (status !== "authenticated") {
+      router.push(
+        `/login?callbackUrl=${encodeURIComponent(pathname)}&message=${encodeURIComponent(
+          "Please log in to add books to your cart."
+        )}`
+      );
+      return;
+    }
     addItem({ id, slug, title, author, price, coverImage: coverImage ?? null });
     openCart();
   };

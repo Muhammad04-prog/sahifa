@@ -8,8 +8,7 @@ export const metadata: Metadata = {
     "Browse and buy a curated collection of books. Read online or purchase your favourites.",
 };
 
-// Revalidate every hour so new books appear without redeploy
-export const revalidate = 3600;
+export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
   const books = await prisma.book.findMany({

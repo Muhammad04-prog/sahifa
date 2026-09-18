@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { checkoutSchema } from "@/lib/validations";
 
 export async function GET() {
   try {
     const orders = await prisma.order.findMany({
       include: {
         user: { select: { name: true, email: true } },
-        items: { include: { book: { select: { title: true } } } },
+        items: { include: { book: { select: { title: true, coverImage: true, slug: true } } } },
       },
       orderBy: { createdAt: "desc" },
     });
@@ -20,20 +21,58 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const session = await getServerSession(authOptions);
     const body = await request.json();
-    const parsed = checkoutSchema.safeParse(body);
+    const { name, email, items } = body;
 
-    if (!parsed.success) {
-      return NextResponse.json(
-        { error: "Validation failed", details: parsed.error.flatten() },
-        { status: 400 }
-      );
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return NextResponse.json({ error: "Cart is empty" }, { status: 400 });
     }
 
-    // TODO: validate cart items against DB stock, create real order
-    return NextResponse.json({ message: "Order endpoint ready" }, { status: 201 });
-  } catch (error) {
+    // Find or obtain user ID
+    let userId = (session?.user as any)?.id;
+
+    if (!userId && email) {
+      const existing = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
+      if (existing) {
+        userId = existing.id;
+      } else {
+        const newUser = await prisma.user.create({
+          data: { email: email.toLowerCase(), name: name || "Customer" },
+        });
+        userId = newUser.id;
+      }
+    }
+
+    if (!userId) {
+      return NextResponse.json({ error: "User authentication or email required" }, { status: 400 });
+    }
+
+    // Calculate total price
+    const total = items.reduce((acc: number, item: any) => acc + item.price * item.quantity, 0);
+
+    // Create order with items
+    const order = await prisma.order.create({
+      data: {
+        userId,
+        status: "CONFIRMED",
+        total,
+        items: {
+          create: items.map((item: any) => ({
+            bookId: item.id,
+            quantity: item.quantity,
+            price: item.price,
+          })),
+        },
+      },
+      include: {
+        items: true,
+      },
+    });
+
+    return NextResponse.json(order, { status: 201 });
+  } catch (error: any) {
     console.error("[API /orders POST]", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: error.message || "Internal server error" }, { status: 500 });
   }
 }
