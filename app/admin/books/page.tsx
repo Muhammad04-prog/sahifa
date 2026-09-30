@@ -102,14 +102,17 @@ function BookFormDialog({
 
           <div>
             <label className="block text-xs font-medium mb-1 text-muted-foreground uppercase tracking-wide">
-              Description
+              Description<span className="text-destructive ml-0.5">*</span>
             </label>
             <textarea
               {...register("description")}
               rows={3}
-              className={`${inputClass(false)} resize-none`}
+              className={`${inputClass(!!errors.description)} resize-none`}
               placeholder="Short book description…"
             />
+            {errors.description && (
+              <p className="mt-1 text-xs text-destructive">{errors.description.message}</p>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-4">

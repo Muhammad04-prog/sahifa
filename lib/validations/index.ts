@@ -5,7 +5,7 @@ import { z } from "zod";
 export const createBookSchema = z.object({
   title: z.string().min(1, "Title is required").max(255),
   author: z.string().min(1, "Author is required").max(255),
-  description: z.string().optional(),
+  description: z.string().min(1, "Description is required").max(5000),
   price: z.coerce
     .number()
     .positive("Price must be positive")

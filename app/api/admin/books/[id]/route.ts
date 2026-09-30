@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireAdminApi } from "@/lib/auth-guard";
 import { updateBookSchema } from "@/lib/validations";
 
 interface Params {
@@ -8,6 +9,9 @@ interface Params {
 
 // PATCH — update book
 export async function PATCH(request: Request, { params }: Params) {
+  const auth = await requireAdminApi();
+  if (!auth.ok) return auth.response;
+
   try {
     const { id } = await params;
     const body = await request.json();
@@ -38,6 +42,9 @@ export async function PATCH(request: Request, { params }: Params) {
 
 // DELETE — remove book
 export async function DELETE(_request: Request, { params }: Params) {
+  const auth = await requireAdminApi();
+  if (!auth.ok) return auth.response;
+
   try {
     const { id } = await params;
     await prisma.book.delete({ where: { id } });

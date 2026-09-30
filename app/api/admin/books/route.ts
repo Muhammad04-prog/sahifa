@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireAdminApi } from "@/lib/auth-guard";
 import { createBookSchema } from "@/lib/validations";
 import { slugify } from "@/lib/utils";
 
 // GET all books (admin — includes unpublished)
 export async function GET() {
+  const auth = await requireAdminApi();
+  if (!auth.ok) return auth.response;
+
   try {
     const books = await prisma.book.findMany({
       orderBy: { createdAt: "desc" },
@@ -18,6 +22,9 @@ export async function GET() {
 
 // POST — create new book
 export async function POST(request: Request) {
+  const auth = await requireAdminApi();
+  if (!auth.ok) return auth.response;
+
   try {
     const body = await request.json();
     const parsed = createBookSchema.safeParse(body);
@@ -32,7 +39,6 @@ export async function POST(request: Request) {
 
     // Auto-generate slug from title
     let slug = slugify(rest.title);
-    // Ensure uniqueness
     const existing = await prisma.book.findUnique({ where: { slug } });
     if (existing) slug = `${slug}-${Date.now()}`;
 

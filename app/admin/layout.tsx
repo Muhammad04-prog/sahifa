@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { BookOpen, ShoppingBag, LayoutDashboard, ChevronRight } from "lucide-react";
+import { requireAdminPage } from "@/lib/auth-guard";
 
 const navItems = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
@@ -7,7 +8,10 @@ const navItems = [
   { href: "/admin/orders", label: "Orders", icon: ShoppingBag },
 ];
 
-export default function AdminLayout({ children }: { children: React.ReactNode }) {
+export default async function AdminLayout({ children }: { children: React.ReactNode }) {
+  // Server-side guard: redirects to /login if not authenticated, to / if not ADMIN
+  await requireAdminPage();
+
   return (
     <div className="min-h-screen flex bg-background">
       {/* Sidebar */}
