@@ -29,9 +29,17 @@ function BookFormDialog({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const [coverMode, setCoverMode] = useState<"file" | "url">("file");
+  const [pdfMode, setPdfMode] = useState<"file" | "url">("file");
+  const [uploadingCover, setUploadingCover] = useState(false);
+  const [uploadingPdf, setUploadingPdf] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
   const {
     register,
     handleSubmit,
+    setValue,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<CreateBookInput>({
     resolver: zodResolver(createBookSchema),
@@ -46,17 +54,51 @@ function BookFormDialog({
           stock: book.stock,
           published: book.published,
         }
-      : { published: false, stock: 0 },
+      : { published: false, stock: 0, coverImage: "", pdfUrl: "" },
   });
+
+  const coverUrl = watch("coverImage");
+  const pdfUrl = watch("pdfUrl");
+
+  const handleFileUpload = async (
+    file: File,
+    field: "coverImage" | "pdfUrl",
+    setUploading: (loading: boolean) => void
+  ) => {
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to upload file");
+      }
+      setValue(field, data.url, { shouldValidate: true });
+    } catch (err: any) {
+      setUploadError(err.message || "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const onSubmit = async (data: CreateBookInput) => {
     const url = book ? `/api/admin/books/${book.id}` : "/api/admin/books";
     const method = book ? "PATCH" : "POST";
-    await fetch(url, {
+    const res = await fetch(url, {
       method,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     });
+    if (!res.ok) {
+      const errData = await res.json();
+      setUploadError(errData.error || "Failed to save book");
+      return;
+    }
     onSaved();
     onClose();
   };
@@ -79,26 +121,153 @@ function BookFormDialog({
         </div>
 
         <form onSubmit={handleSubmit(onSubmit)} className="p-5 space-y-4">
-          {[
-            { label: "Title", field: "title" as const, required: true },
-            { label: "Author", field: "author" as const, required: true },
-            { label: "Cover Image URL", field: "coverImage" as const },
-            { label: "PDF URL (optional)", field: "pdfUrl" as const },
-          ].map(({ label, field, required }) => (
-            <div key={field}>
-              <label className="block text-xs font-medium mb-1 text-muted-foreground uppercase tracking-wide">
-                {label}{required && <span className="text-destructive ml-0.5">*</span>}
-              </label>
-              <input
-                {...register(field)}
-                className={inputClass(!!errors[field])}
-                placeholder={label}
-              />
-              {errors[field] && (
-                <p className="mt-1 text-xs text-destructive">{errors[field]?.message}</p>
-              )}
+          {uploadError && (
+            <div className="p-3 bg-destructive/10 border border-destructive/30 text-destructive text-xs rounded-md">
+              {uploadError}
             </div>
-          ))}
+          )}
+
+          <div>
+            <label className="block text-xs font-medium mb-1 text-muted-foreground uppercase tracking-wide">
+              Title<span className="text-destructive ml-0.5">*</span>
+            </label>
+            <input
+              {...register("title")}
+              className={inputClass(!!errors.title)}
+              placeholder="Book Title"
+            />
+            {errors.title && (
+              <p className="mt-1 text-xs text-destructive">{errors.title.message}</p>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium mb-1 text-muted-foreground uppercase tracking-wide">
+              Author<span className="text-destructive ml-0.5">*</span>
+            </label>
+            <input
+              {...register("author")}
+              className={inputClass(!!errors.author)}
+              placeholder="Author Name"
+            />
+            {errors.author && (
+              <p className="mt-1 text-xs text-destructive">{errors.author.message}</p>
+            )}
+          </div>
+
+          {/* Cover Image Upload / URL */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                Cover Image (JPG/PNG)
+              </label>
+              <button
+                type="button"
+                onClick={() => setCoverMode(coverMode === "file" ? "url" : "file")}
+                className="text-xs text-primary hover:underline"
+              >
+                {coverMode === "file" ? "or paste a URL instead" : "or upload a file instead"}
+              </button>
+            </div>
+            {coverMode === "file" ? (
+              <div className="space-y-2">
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={(e) =>
+                    e.target.files?.[0] &&
+                    handleFileUpload(e.target.files[0], "coverImage", setUploadingCover)
+                  }
+                  disabled={uploadingCover}
+                  className="w-full text-xs text-muted-foreground file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20 cursor-pointer"
+                />
+                {uploadingCover && (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
+                    Uploading cover image...
+                  </div>
+                )}
+                {coverUrl && !uploadingCover && (
+                  <div className="flex items-center justify-between p-2 bg-muted/50 rounded border text-xs">
+                    <span className="truncate max-w-[280px] text-foreground">{coverUrl}</span>
+                    <button
+                      type="button"
+                      onClick={() => setValue("coverImage", "")}
+                      className="text-destructive hover:underline ml-2 text-xs"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <input
+                {...register("coverImage")}
+                className={inputClass(!!errors.coverImage)}
+                placeholder="https://example.com/cover.jpg"
+              />
+            )}
+            {errors.coverImage && (
+              <p className="mt-1 text-xs text-destructive">{errors.coverImage.message}</p>
+            )}
+          </div>
+
+          {/* PDF File Upload / URL */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                PDF Book File (optional)
+              </label>
+              <button
+                type="button"
+                onClick={() => setPdfMode(pdfMode === "file" ? "url" : "file")}
+                className="text-xs text-primary hover:underline"
+              >
+                {pdfMode === "file" ? "or paste a URL instead" : "or upload a file instead"}
+              </button>
+            </div>
+            {pdfMode === "file" ? (
+              <div className="space-y-2">
+                <input
+                  type="file"
+                  accept="application/pdf"
+                  onChange={(e) =>
+                    e.target.files?.[0] &&
+                    handleFileUpload(e.target.files[0], "pdfUrl", setUploadingPdf)
+                  }
+                  disabled={uploadingPdf}
+                  className="w-full text-xs text-muted-foreground file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20 cursor-pointer"
+                />
+                {uploadingPdf && (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
+                    Uploading PDF file...
+                  </div>
+                )}
+                {pdfUrl && !uploadingPdf && (
+                  <div className="flex items-center justify-between p-2 bg-muted/50 rounded border text-xs">
+                    <span className="truncate max-w-[280px] text-foreground">{pdfUrl}</span>
+                    <button
+                      type="button"
+                      onClick={() => setValue("pdfUrl", "")}
+                      className="text-destructive hover:underline ml-2 text-xs"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <input
+                {...register("pdfUrl")}
+                className={inputClass(!!errors.pdfUrl)}
+                placeholder="https://example.com/book.pdf"
+              />
+            )}
+            {errors.pdfUrl && (
+              <p className="mt-1 text-xs text-destructive">{errors.pdfUrl.message}</p>
+            )}
+          </div>
 
           <div>
             <label className="block text-xs font-medium mb-1 text-muted-foreground uppercase tracking-wide">
@@ -161,7 +330,7 @@ function BookFormDialog({
           <div className="flex gap-3 pt-2 border-t border-border">
             <button
               type="submit"
-              disabled={isSubmitting}
+              disabled={isSubmitting || uploadingCover || uploadingPdf}
               className="flex-1 py-2.5 bg-primary text-primary-foreground rounded-md font-semibold text-sm hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-2"
             >
               {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}

@@ -1,10 +1,12 @@
-import { notFound } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import type { Metadata } from "next";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { formatPrice } from "@/lib/utils";
 import AddToCartButton from "./add-to-cart-button";
+import { BookOpen, Download, Lock } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -49,11 +51,33 @@ export default async function BookPage({ params }: Props) {
     );
   }
 
+  // Check server-side if user is logged in and has purchased this book
+  const session = await getServerSession(authOptions);
+  let hasPurchased = false;
+
+  if (session?.user) {
+    const userId = (session.user as any).id;
+    if (userId) {
+      const purchase = await prisma.orderItem.findFirst({
+        where: {
+          bookId: book.id,
+          order: {
+            userId: userId,
+            status: { not: "CANCELLED" },
+          },
+        },
+      });
+      hasPurchased = !!purchase;
+    }
+  }
+
   return (
     <main className="max-w-5xl mx-auto px-4 sm:px-6 py-12">
       {/* Breadcrumb */}
       <nav className="mb-8 text-sm text-muted-foreground flex items-center gap-2">
-        <Link href="/" className="hover:text-primary transition-colors">Home</Link>
+        <Link href="/" className="hover:text-primary transition-colors">
+          Home
+        </Link>
         <span>/</span>
         <span className="text-foreground truncate max-w-xs">{book.title}</span>
       </nav>
@@ -130,21 +154,58 @@ export default async function BookPage({ params }: Props) {
               }}
               outOfStock={book.stock === 0}
             />
-
-            {book.pdfUrl && (
-              <Link
-                href={`/read/${book.slug}`}
-                className="inline-flex items-center gap-2 px-6 py-3 border border-primary text-primary rounded-md font-semibold hover:bg-primary/10 transition-colors"
-              >
-                📖 Read Online
-              </Link>
-            )}
           </div>
 
+          {/* PDF Format & Download Access */}
           {book.pdfUrl && (
-            <p className="text-xs text-muted-foreground">
-              ✓ This book is available for online reading after purchase.
-            </p>
+            <div className="border-t border-border pt-4 mt-2 space-y-3">
+              <h2 className="font-heading text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Digital Edition Access
+              </h2>
+              <div className="flex flex-wrap gap-3">
+                {/* Read online button - always visible/clickable */}
+                <Link
+                  href={`/read/${book.slug}`}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 border border-primary text-primary hover:bg-primary/10 rounded-md font-semibold text-sm transition-colors"
+                >
+                  <BookOpen className="w-4 h-4" />
+                  Read Online
+                </Link>
+
+                {/* Download PDF button/section based on access */}
+                {!session?.user ? (
+                  <Link
+                    href={`/login?callbackUrl=${encodeURIComponent(`/book/${book.slug}`)}`}
+                    className="inline-flex items-center gap-2 px-5 py-2.5 border border-border bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground rounded-md font-medium text-sm transition-colors"
+                  >
+                    <Lock className="w-4 h-4" />
+                    Log in to check download access
+                  </Link>
+                ) : hasPurchased ? (
+                  <a
+                    href={book.pdfUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    download
+                    className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-md font-semibold text-sm hover:bg-emerald-700 transition-colors shadow-sm"
+                  >
+                    <Download className="w-4 h-4" />
+                    Download PDF
+                  </a>
+                ) : (
+                  <div className="inline-flex items-center gap-2 px-5 py-2.5 bg-muted text-muted-foreground rounded-md font-medium text-sm border border-border cursor-not-allowed opacity-75">
+                    <Lock className="w-4 h-4 text-muted-foreground/70" />
+                    Purchase to download PDF
+                  </div>
+                )}
+              </div>
+
+              <p className="text-xs text-muted-foreground">
+                {hasPurchased
+                  ? "✓ You have purchased this book. PDF download is enabled."
+                  : "Purchase this book to unlock direct PDF downloading."}
+              </p>
+            </div>
           )}
         </div>
       </div>
